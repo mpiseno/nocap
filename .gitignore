@@ -1,0 +1,6 @@
+nocap/body_model/smplh
+data
+
+nocap.egg-info
+.DS_Store
+__pycache__
