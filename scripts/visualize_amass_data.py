@@ -42,6 +42,8 @@ def visualize(args, device):
     bm = BodyModel(bm_fname=bm_fname, num_betas=num_betas).to(device)
     faces = c2c(bm.f)
 
+    time_length = len(bdata['trans'])
+    print('time_length = {}'.format(time_length))
     body_parms = {
         'root_orient': torch.Tensor(bdata['poses'][:, :3]).to(device), # controls the global root orientation
         'pose_body': torch.Tensor(bdata['poses'][:, 3:66]).to(device), # controls the body
@@ -51,8 +53,6 @@ def visualize(args, device):
     }
 
     print('Body parameter vector shapes: \n{}'.format(' \n'.join(['{}: {}'.format(k,v.shape) for k,v in body_parms.items()])))
-    time_length = len(bdata['trans'])
-    print('time_length = {}'.format(time_length))
 
     imw, imh = 1600, 1600
     mv = MeshViewer(width=imw, height=imh, use_offscreen=True)
