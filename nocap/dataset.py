@@ -5,7 +5,6 @@ import torch
 import numpy as np
 
 from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
 
 
 class AMASS_DS(Dataset):
@@ -16,8 +15,4 @@ class AMASS_DS(Dataset):
        return len(self.data)
 
     def __getitem__(self, idx):
-        return self.data[idx]
-
-
-
-ds = AMASS_DS('data/amass_processed/train_split.npy')
+        return self.data[idx].astype(np.float32)
