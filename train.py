@@ -1,17 +1,24 @@
 import os
+import sys
+import shutil
 import time
 import math
 import argparse
+import pathlib
 
 import numpy as np
 import torch
 
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from torch.distributions import Normal
 
 from nocap.config import default_config
 from nocap.model import NoCAP
 from nocap.dataset import AMASS_DS
+
+
+LOG_DIR = 'logs'
 
 
 def compute_nll(model, batch):
@@ -52,21 +59,81 @@ def train(model, optimizer, dataloader, epoch):
         n_samples += len(batch)
 
     total_loss /= n_samples
-    print(f'Epoch: {epoch} | Loss: {total_loss}')
+    print(f'Epoch: {epoch} | Train Loss: {total_loss}')
     return total_loss
 
 
+def test(model, dataloader, epoch):
+    model.eval()
+    total_loss = 0
+    n_samples = 0
+    with torch.no_grad():
+        for batch in dataloader:
+            loss = compute_nll(model, batch)
+            total_loss += loss.item()
+            n_samples += len(batch)
+
+    total_loss /= n_samples
+    print(f'Epoch: {epoch} | Val Loss: {total_loss}')
+    return total_loss
+
+
+def save(save_dir, model, epoch):
+    save_path = os.path.join(save_dir, f'ckpt_epoch={epoch}.pt')
+    torch.save(model.state_dict(), save_path)
+
+
+def log(log_dir, writer, stats, epoch):
+    for key, val in stats.items():
+        writer.add_scalar(key, val, epoch)
+
+
 def run(args, config):
+    log_dir = os.path.join(LOG_DIR, args.exp_name)
+    save_dir = os.path.join(log_dir, 'checkpoints')
+    if os.path.exists(log_dir):
+        response = input(f'Log directory {log_dir} exists. Overwrite? (y/n): ')
+        if response.lower() != 'y':
+            print(f'Exiting...')
+            sys.exit(0)
+        else:
+            shutil.rmtree(log_dir)
+
+    pathlib.Path(save_dir).mkdir(exist_ok=True, parents=True)
+    if args.log:
+        writer = SummaryWriter(log_dir=log_dir)
+
     model = NoCAP(config)
 
     train_data_path = os.path.join(args.data_dir, 'train_split.npy')
     train_dataset = AMASS_DS(train_data_path)
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size)
+    val_dataloader = train_dataloader
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
+    best_val_loss, best_val_epoch = 1e10, None
     for epoch in range(1, args.num_epochs + 1):
         train_loss = train(model, optimizer, train_dataloader, epoch)
+        stats = {
+            'train_nll': train_loss
+        }
+
+        if epoch % args.val_freq == 0:
+            val_loss = test(model, val_dataloader, epoch)
+            stats['val_nll'] = val_loss
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_val_epoch = epoch
+
+        if args.save_ckpts and epoch % args.save_freq == 0:
+            save(save_dir, model, epoch)
+        
+        if args.log:
+            log(log_dir, writer, stats, epoch)
+
+    save(save_dir, model, epoch='final')
+    print(f'Best val loss: {best_val_loss}, epoch: {best_val_epoch}')
     
 
 if __name__ == '__main__':
@@ -75,6 +142,11 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir', default='data/amass_processed')
     parser.add_argument('--batch_size', default=16)
     parser.add_argument('--lr', default=1e-3)
+    parser.add_argument('--val_freq', default=5)
+    parser.add_argument('--save_freq', default=5)
+    parser.add_argument('--save_ckpts', type=bool, default=True)
+    parser.add_argument('--log', type=bool, default=True)
+    parser.add_argument('--exp_name', default='default')
     args = parser.parse_args()
 
     config = default_config
