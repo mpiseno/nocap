@@ -78,9 +78,13 @@ def test(model, dataloader, epoch):
     return total_loss
 
 
-def save(save_dir, model, epoch):
+def save(save_dir, model, config, epoch):
     save_path = os.path.join(save_dir, f'ckpt_epoch={epoch}.pt')
-    torch.save(model.state_dict(), save_path)
+    save_dict = {
+        'model_state_dict': model.state_dict(),
+        'model_config': config
+    }
+    torch.save(save_dict, save_path)
 
 
 def log(log_dir, writer, stats, epoch):
@@ -127,12 +131,12 @@ def run(args, config):
                 best_val_epoch = epoch
 
         if args.save_ckpts and epoch % args.save_freq == 0:
-            save(save_dir, model, epoch)
+            save(save_dir, model, config, epoch)
         
         if args.log:
             log(log_dir, writer, stats, epoch)
 
-    save(save_dir, model, epoch='final')
+    save(save_dir, model, config, epoch='final')
     print(f'Best val loss: {best_val_loss}, epoch: {best_val_epoch}')
     
 

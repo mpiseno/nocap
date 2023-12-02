@@ -49,8 +49,16 @@ def process():
 
     # Do train test val split
     train_split = all_data
-    train_path = os.path.join(PROCESSED_DATA_DIR, 'train_split.npy')
-    np.save(train_path, train_split)
+    train_path = os.path.join(PROCESSED_DATA_DIR, 'train_split')
+    save_dict = {
+        'pose_body': train_split,
+        'motion_freq': DESIRED_FRAME_RATE
+    }
+    np.savez(
+        train_path,
+        pose_body=train_split,
+        motion_freq=DESIRED_FRAME_RATE
+    )
                 
 
 if __name__ == '__main__':

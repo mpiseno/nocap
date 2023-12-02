@@ -170,6 +170,7 @@ class NoCAP(nn.Module):
         super().__init__()
         self.transformer = Transformer(config)
         self.conditional = nn.Linear(config.dim_embed, 6)
+        self.n_ctx = config.n_ctx
     
     def forward(self, input_, position_ids=None, past=None):
         hidden_states, presents = self.transformer(input_, position_ids, past)
