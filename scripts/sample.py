@@ -11,7 +11,7 @@ from nocap.dataset import NoCAP_DS
 
 def clip_context(past, current, max_ctx):
     if past is None:
-        return past
+        return None
     
     key, value = past
 
@@ -46,12 +46,12 @@ def sample(model, current, num_samples):
             current = new_pose
             past = new_past
     
-    output = torch.vstack(output).numpy()
-    return output
+    output = torch.vstack(output).view(-1, 63)
+    return output.numpy()
 
 
 def run(args):
-    ckpt = torch.load(args.ckpt_path)
+    ckpt = torch.load(args.ckpt_path, map_location='cpu')
 
     config = ckpt['model_config']
     model_state_dict = ckpt['model_state_dict']
@@ -69,8 +69,13 @@ def run(args):
     ckpt_name = args.ckpt_path.split('/')[-1][:-len('.pt')]
     output_dir = os.path.join(*ckpt_dir, 'samples')
     pathlib.Path(output_dir).mkdir(exist_ok=True, parents=True)
-    output_path = os.path.join(output_dir, f'seconds={args.seconds}_{ckpt_name}.npy')
-    np.save(output_path, output)
+    output_path = os.path.join(output_dir, f'seconds={args.seconds}_{ckpt_name}')
+    save_dict = {
+        'pose_body': output,
+        'betas': dataset.betas,
+        'root_orient': dataset.root_orient
+    }
+    np.savez(output_path, **save_dict)
 
     print('Done!')
 
@@ -78,7 +83,7 @@ def run(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--ckpt_path', required=True)
-    parser.add_argument('--data_path', default='data/amass_processed/train_split.npz')
-    parser.add_argument('--seconds', default=3)
+    parser.add_argument('--data_path', required=True)
+    parser.add_argument('--seconds', default=10)
     args = parser.parse_args()
     run(args)

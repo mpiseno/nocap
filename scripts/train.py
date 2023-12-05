@@ -45,11 +45,12 @@ def compute_nll(model, batch):
     return loss
 
 
-def train(model, optimizer, dataloader, epoch):
+def train(model, optimizer, dataloader, device, epoch):
     model.train()
     total_loss = 0
     n_samples = 0
     for batch in tqdm.tqdm(dataloader):
+        batch = batch.to(device)
         loss = compute_nll(model, batch)
 
         optimizer.zero_grad()
@@ -64,13 +65,15 @@ def train(model, optimizer, dataloader, epoch):
     return total_loss
 
 
-def test(model, dataloader, epoch):
+def test(model, dataloader, device, epoch):
     model.eval()
     total_loss = 0
     n_samples = 0
     with torch.no_grad():
-        for batch in dataloader:
+        for batch in tqdm.tqdm(dataloader):
+            batch = batch.to(device)
             loss = compute_nll(model, batch)
+
             total_loss += loss.item()
             n_samples += len(batch)
 
@@ -110,26 +113,29 @@ def run(args, config):
         pathlib.Path(save_dir).mkdir(exist_ok=True, parents=True)
         writer = SummaryWriter(log_dir=log_dir)
 
-    model = NoCAP(config)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f'Using device: {device}')
+
+    model = NoCAP(config).to(device)
 
     train_data_path = os.path.join(args.data_dir, 'train_split.npz')
     train_dataset = NoCAP_DS(train_data_path)
     val_data_path = os.path.join(args.data_dir, 'val_split.npz')
     val_dataset = NoCAP_DS(val_data_path)
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size)
-    val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size)
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     best_val_loss, best_val_epoch = 1e10, None
     for epoch in range(1, args.num_epochs + 1):
-        train_loss = train(model, optimizer, train_dataloader, epoch)
+        train_loss = train(model, optimizer, train_dataloader, device, epoch)
         stats = {
             'train_nll': train_loss
         }
 
         if epoch % args.val_freq == 0:
-            val_loss = test(model, val_dataloader, epoch)
+            val_loss = test(model, val_dataloader, device, epoch)
             stats['val_nll'] = val_loss
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
@@ -150,14 +156,14 @@ def run(args, config):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', required=True)
-    parser.add_argument('--num_epochs', default=10)
-    parser.add_argument('--batch_size', default=128)
-    parser.add_argument('--lr', default=1e-3)
-    parser.add_argument('--val_freq', default=5)
-    parser.add_argument('--save_freq', default=5)
+    parser.add_argument('--num_epochs', type=int, default=10)
+    parser.add_argument('--batch_size', type=int, default=512)
+    parser.add_argument('--lr', type=float, default=5e-4)
+    parser.add_argument('--val_freq', type=int, default=5)
+    parser.add_argument('--save_freq', type=int, default=5)
     parser.add_argument('--save_ckpts', type=bool, default=True)
     parser.add_argument('--disable_logging', action='store_true', default=False)
-    parser.add_argument('--exp_name', default='default')
+    parser.add_argument('--exp_name', type=str, default='default')
     args = parser.parse_args()
 
     config = default_config

@@ -8,7 +8,7 @@ First, we process the raw AMASS data by running the following command.
 python scripts/process_amass_data.py --datasets SFU
 ```
 
-This will parse all the data files and create sequences of motion data.
+This will parse all the data files and create sequences of motion data. This will create a training and validation split. To process data and save an output for each file, use the `--by_file` flag.
 
 ## Training
 
@@ -17,6 +17,15 @@ To train the model, run the following command. Replace the `data_dir` with the a
 ```bash
 python scripts/train.py --data_dir data/amass_processed/SFU
 ```
+
+## Testing
+
+To run inference, run the sampling script.
+
+```bash
+python scripts/sampling.py --ckpt_path logs/sfu_full/checkpoints/ckpt_epoch=final.pt --data_path data/amass_processed/by_file/0005_Jogging001_stageii.npz
+```
+
 
 ## Visualizing
 

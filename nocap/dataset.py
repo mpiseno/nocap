@@ -12,6 +12,8 @@ class NoCAP_DS(Dataset):
         self.data = np.load(data_path)
         self.poses = self.data['pose_body']
         self.motion_freq = self.data['motion_freq']
+        self.betas = self.data.get('betas', None)
+        self.root_orient = self.data.get('root_orient', None)
         self.num_joints = 21
 
     def __len__(self):

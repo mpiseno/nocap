@@ -10,8 +10,8 @@ default_config_ = {
     'seed': 20231206,
     'n_head': 4,
     'n_layer': 2,
-    'n_ctx': 512, # maximum context length
-    'n_positions': 512,
+    'n_ctx': 315, # maximum context length
+    'n_positions': 315,
     'dim_embed': 32 * 4,
     'layer_norm_epsilon': 0.00001
 }

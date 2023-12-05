@@ -26,6 +26,8 @@ def process_amass_file(input_path):
     assert frame_rate >= DESIRED_FRAME_RATE
 
     body_poses = data['pose_body']
+    betas = data['betas']
+    root_orient = data['root_orient']
 
     # Ensure poses are sampled at DESIRED_FRAME_RATE Hz
     num_poses = len(body_poses)
@@ -41,26 +43,21 @@ def process_amass_file(input_path):
         processed_data.append(frames)
 
     processed_data = np.array(processed_data)
-    return processed_data
+    return processed_data, betas, root_orient
 
 
-def process(args):
-    valid_file = lambda fp: fp.endswith('.npz') and fp not in INVALID_FILES
+def save_by_file(file, data, betas, root_orient):
+    output_path = os.path.join(PROCESSED_DATA_ROOT, 'by_file', file)
+    save_dict = {
+        'pose_body': data,
+        'motion_freq': DESIRED_FRAME_RATE,
+        'betas': betas,
+        'root_orient': root_orient
+    }
+    np.savez(output_path, **save_dict)
 
-    all_data = []
-    for dataset in args.datasets:
-        dataset_path = os.path.join(DATA_ROOT, dataset)
-        for root, dirs, files in os.walk(dataset_path):
-            for file in files:
-                if valid_file(file):
-                    input_path = os.path.join(root, file)
-                    processed_data = process_amass_file(input_path)
-                    all_data.append(processed_data)
 
-    all_data = np.vstack(all_data)
-    np.random.shuffle(all_data)
-    print(f'Total amount of data: {all_data.shape}')
-
+def save_by_dataset(args, all_data):
     train_end = int(TRAIN_SPLIT * len(all_data))
     train_split = all_data[:train_end]
     val_split = all_data[train_end:]
@@ -81,6 +78,33 @@ def process(args):
     np.savez(val_path, **val_save_dict)
 
 
+def process(args):
+    valid_file = lambda fp: fp.endswith('.npz') and fp not in INVALID_FILES
+
+    if args.by_file:
+        output_dir = os.path.join(PROCESSED_DATA_ROOT, 'by_file')
+        pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    all_data = []
+    for dataset in args.datasets:
+        dataset_path = os.path.join(DATA_ROOT, dataset)
+        for root, dirs, files in os.walk(dataset_path):
+            for file in files:
+                if valid_file(file):
+                    input_path = os.path.join(root, file)
+                    processed_data, betas, root_orient = process_amass_file(input_path)
+                    all_data.append(processed_data)
+                    if args.by_file:
+                        save_by_file(file, processed_data, betas, root_orient)
+
+    if not args.by_file:
+        all_data = np.vstack(all_data)
+        np.random.shuffle(all_data)
+        print(f'Total amount of data: {all_data.shape}')
+
+        save_by_dataset(args, all_data)
+
+
 def verify(args):
     for dataset in args.datasets:
         dataset_path = os.path.join(DATA_ROOT, dataset)
@@ -91,6 +115,7 @@ def verify(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--datasets', nargs='+', type=str, required=True)
+    parser.add_argument('--by_file', action='store_true', default=False)
     args = parser.parse_args()
     verify(args)
     process(args)

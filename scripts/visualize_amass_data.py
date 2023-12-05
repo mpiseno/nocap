@@ -47,22 +47,30 @@ def visualize(args, device):
 
     print(f'Data keys available: {list(bdata.keys())}')
 
-    subject_gender = bdata['gender']
-
+    subject_gender = 'neutral'
     bm_fname = os.path.join(smplh_dir, f'{subject_gender}/model.npz')
     num_betas = 16 # number of body parameters
     bm = BodyModel(bm_fname=bm_fname, num_betas=num_betas, model_type='smplh').to(device)
     faces = c2c(bm.f)
 
-    time_length = len(bdata['trans'])
+    time_length = len(bdata['pose_body'])
     print('time_length = {}'.format(time_length))
+    # body_parms = {
+    #     'root_orient': torch.Tensor(bdata['poses'][:, :3]).to(device), # controls the global root orientation
+    #     'pose_body': torch.Tensor(bdata['poses'][:, 3:66]).to(device), # controls the body
+    #     #'trans': torch.Tensor(bdata['trans']).to(device), # controls the global body position
+    #     'betas': torch.Tensor(np.repeat(bdata['betas'][:num_betas][np.newaxis], repeats=time_length, axis=0)).to(device), # controls the body shape. Body shape is static
+    # }
     body_parms = {
-        'root_orient': torch.Tensor(bdata['poses'][:, :3]).to(device), # controls the global root orientation
-        'pose_body': torch.Tensor(bdata['poses'][:, 3:66]).to(device), # controls the body
-        'pose_hand': torch.Tensor(bdata['poses'][:, 66:]).to(device), # controls the finger articulation
-        'trans': torch.Tensor(bdata['trans']).to(device), # controls the global body position
+        'root_orient': torch.Tensor(bdata['root_orient']).to(device), # controls the global root orientation
+        'pose_body': torch.Tensor(bdata['pose_body']).to(device), # controls the body
+        #'trans': torch.Tensor(bdata['trans']).to(device), # controls the global body position
         'betas': torch.Tensor(np.repeat(bdata['betas'][:num_betas][np.newaxis], repeats=time_length, axis=0)).to(device), # controls the body shape. Body shape is static
     }
+    if body_parms['root_orient'].shape[0] != body_parms['pose_body'].shape[0]:
+        body_parms['root_orient'] = torch.Tensor(
+            np.repeat(bdata['root_orient'][0][np.newaxis], repeats=time_length, axis=0)
+        ).to(device)
 
     imw, imh = 512, 512
     mv = MeshViewer(width=imw, height=imh, use_offscreen=True)
