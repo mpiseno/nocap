@@ -7,11 +7,12 @@ import numpy as np
 from nocap.utils.torch import copy2cpu as c2c
 from nocap.body_model.body_model import BodyModel
 
-# import trimesh
-# from body_visualizer.tools.vis_tools import colors
-# from body_visualizer.mesh.mesh_viewer import MeshViewer
+import trimesh
+from body_visualizer.tools.vis_tools import colors
+from body_visualizer.mesh.mesh_viewer import MeshViewer
 # from body_visualizer.mesh.sphere import points_to_spheres
-# from body_visualizer.tools.vis_tools import show_image
+from human_body_prior.body_model.body_model import BodyModel
+from body_visualizer.tools.vis_tools import show_image
 
 
 data_root = 'data/amass_raw'
@@ -22,16 +23,16 @@ def vis_body_pose_beta(body_pose_beta, faces, mv, fId=0):
     body_mesh = trimesh.Trimesh(vertices=c2c(body_pose_beta.v[fId]), faces=faces, vertex_colors=np.tile(colors['grey'], (6890, 1)))
     mv.set_static_meshes([body_mesh])
     body_image = mv.render(render_wireframe=False)
-    show_image(body_image)
+    import pdb; pdb.set_trace()
+    #show_image(body_image)
 
 
 def visualize(args, device):
     data_dir = os.path.join(data_root, args.dataset)
     
-    frame = os.path.join(data_dir, '0005/0005_Jogging001_stageii.npz') # the path to body data
+    #frame = os.path.join(data_dir, '0005/0005_Jogging001_stageii.npz') # the path to body data
+    frame = 'data/0005_Jogging001_stageii.npz'
     bdata = np.load(frame)
-
-    import pdb; pdb.set_trace()
 
     print(f'Data keys available: {list(bdata.keys())}')
 
@@ -39,7 +40,7 @@ def visualize(args, device):
 
     bm_fname = os.path.join(smplh_dir, f'{subject_gender}/model.npz')
     num_betas = 16 # number of body parameters
-    bm = BodyModel(bm_fname=bm_fname, num_betas=num_betas).to(device)
+    bm = BodyModel(bm_fname=bm_fname, num_betas=num_betas, model_type='smplh').to(device)
     faces = c2c(bm.f)
 
     time_length = len(bdata['trans'])
@@ -49,7 +50,7 @@ def visualize(args, device):
         'pose_body': torch.Tensor(bdata['poses'][:, 3:66]).to(device), # controls the body
         'pose_hand': torch.Tensor(bdata['poses'][:, 66:]).to(device), # controls the finger articulation
         'trans': torch.Tensor(bdata['trans']).to(device), # controls the global body position
-        'betas': torch.Tensor(np.repeat(bdata['betas'][:num_betas][np.newaxis], repeats=time_length, axis=0)).t0(device), # controls the body shape. Body shape is static
+        'betas': torch.Tensor(np.repeat(bdata['betas'][:num_betas][np.newaxis], repeats=time_length, axis=0)).to(device), # controls the body shape. Body shape is static
     }
 
     print('Body parameter vector shapes: \n{}'.format(' \n'.join(['{}: {}'.format(k,v.shape) for k,v in body_parms.items()])))
@@ -58,7 +59,7 @@ def visualize(args, device):
     mv = MeshViewer(width=imw, height=imh, use_offscreen=True)
 
     # forward pass through body bodel
-    body_pose_beta = bm(**{k:v for k,v in body_parms.items() if k in ['pose_body', 'betas']})
+    body_pose_beta = bm(**{k:v for k,v in body_parms.items() if k in ['pose_body', 'betas', 'root_orient']})
     vis_body_pose_beta(body_pose_beta, faces, mv, fId=0)
 
 
