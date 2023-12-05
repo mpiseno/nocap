@@ -1,6 +1,7 @@
 nocap/body_model/smplh
 data
 logs
+visuals
 
 nocap.egg-info
 .DS_Store

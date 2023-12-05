@@ -1,13 +1,18 @@
 import os
 import argparse
+import pathlib
 
-import torch
-import numpy as np
-
-from nocap.utils.torch import copy2cpu as c2c
-from nocap.body_model.body_model import BodyModel
+from PIL import Image
 
 import trimesh
+import torch
+import numpy as np
+import tqdm
+
+from scipy.spatial.transform import Rotation as R
+
+from nocap.utils.torch import copy2cpu as c2c
+from nocap.utils.io import write_video
 from body_visualizer.tools.vis_tools import colors
 from body_visualizer.mesh.mesh_viewer import MeshViewer
 # from body_visualizer.mesh.sphere import points_to_spheres
@@ -15,24 +20,30 @@ from human_body_prior.body_model.body_model import BodyModel
 from body_visualizer.tools.vis_tools import show_image
 
 
-data_root = 'data/amass_raw'
 smplh_dir = 'nocap/body_model/smplh'
+OUTPUT_DIR = 'visuals'
+MAX_NUM_FRAMES = 1500
+
+
+def get_camera_pose():
+    # These parameters were found through grad student search
+    r = R.from_rotvec([-np.pi/6, 2*np.pi/3, np.pi])
+    rot = r.as_matrix()
+    pose = np.eye(4)
+    pose[:3, 3] = np.array([-1.5, 1.5, 1.])
+    pose[:3, :3] = rot
+    return pose
 
 
 def vis_body_pose_beta(body_pose_beta, faces, mv, fId=0):
     body_mesh = trimesh.Trimesh(vertices=c2c(body_pose_beta.v[fId]), faces=faces, vertex_colors=np.tile(colors['grey'], (6890, 1)))
     mv.set_static_meshes([body_mesh])
     body_image = mv.render(render_wireframe=False)
-    import pdb; pdb.set_trace()
-    #show_image(body_image)
+    return body_image
 
 
 def visualize(args, device):
-    data_dir = os.path.join(data_root, args.dataset)
-    
-    #frame = os.path.join(data_dir, '0005/0005_Jogging001_stageii.npz') # the path to body data
-    frame = 'data/0005_Jogging001_stageii.npz'
-    bdata = np.load(frame)
+    bdata = np.load(args.motion_path)
 
     print(f'Data keys available: {list(bdata.keys())}')
 
@@ -53,21 +64,36 @@ def visualize(args, device):
         'betas': torch.Tensor(np.repeat(bdata['betas'][:num_betas][np.newaxis], repeats=time_length, axis=0)).to(device), # controls the body shape. Body shape is static
     }
 
-    print('Body parameter vector shapes: \n{}'.format(' \n'.join(['{}: {}'.format(k,v.shape) for k,v in body_parms.items()])))
-
-    imw, imh = 1600, 1600
+    imw, imh = 512, 512
     mv = MeshViewer(width=imw, height=imh, use_offscreen=True)
+    mv.update_camera_pose(get_camera_pose())
 
     # forward pass through body bodel
     body_pose_beta = bm(**{k:v for k,v in body_parms.items() if k in ['pose_body', 'betas', 'root_orient']})
+
     vis_body_pose_beta(body_pose_beta, faces, mv, fId=0)
+
+    print(f'Rendering Video...')
+    images = []
+    num_frames = min(MAX_NUM_FRAMES, len(body_pose_beta.v))
+    for t in tqdm.tqdm(range(num_frames)):
+        body_image = vis_body_pose_beta(body_pose_beta, faces, mv, fId=t)
+        images.append(body_image)
+    
+    motion_file = args.motion_path.split('/')[-1]
+    output_path = os.path.join(OUTPUT_DIR, motion_file[:-len('.npz')] + '.mp4')
+    output_dir = os.path.join(*output_path.split('/')[:-1])
+    pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
+    
+    print(f'Writing video to {output_path}')
+    write_video(output_path, images, fps=60, width=imw, height=imh) # has to be same width height as body_image. no resize here
+
 
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', required=True)
-    parser.add_argument('--num_samples', default=1)
+    parser.add_argument('--motion_path', required=True)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
