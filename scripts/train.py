@@ -6,6 +6,7 @@ import math
 import argparse
 import pathlib
 
+import tqdm
 import numpy as np
 import torch
 
@@ -15,7 +16,7 @@ from torch.distributions import Normal
 
 from nocap.config import default_config
 from nocap.model import NoCAP
-from nocap.dataset import AMASS_DS
+from nocap.dataset import NoCAP_DS
 
 
 LOG_DIR = 'logs'
@@ -38,7 +39,7 @@ def compute_nll(model, batch):
     log_prob = (
         -1. * (x - mu).pow(2) / (2 * sigma.pow(2))
         - torch.log(math.sqrt(2 * math.pi) * sigma)
-    ).sum(-1) # sum the last dimension. NOTE: Assumes independence. Is this ok?
+    ).mean(-1)
     log_prob = log_prob.sum(-1) # sum time dimension
     loss = -1. * log_prob.mean()
     return loss
@@ -48,7 +49,7 @@ def train(model, optimizer, dataloader, epoch):
     model.train()
     total_loss = 0
     n_samples = 0
-    for batch in dataloader:
+    for batch in tqdm.tqdm(dataloader):
         loss = compute_nll(model, batch)
 
         optimizer.zero_grad()
@@ -95,24 +96,28 @@ def log(log_dir, writer, stats, epoch):
 def run(args, config):
     log_dir = os.path.join(LOG_DIR, args.exp_name)
     save_dir = os.path.join(log_dir, 'checkpoints')
-    if os.path.exists(log_dir):
-        response = input(f'Log directory {log_dir} exists. Overwrite? (y/n): ')
-        if response.lower() != 'y':
-            print(f'Exiting...')
-            sys.exit(0)
-        else:
-            shutil.rmtree(log_dir)
+    writer = None
+    log_and_save = not args.disable_logging
+    if log_and_save:
+        if os.path.exists(log_dir):
+            response = input(f'Log directory {log_dir} exists. Overwrite? (y/n): ')
+            if response.lower() != 'y':
+                print(f'Exiting...')
+                sys.exit(0)
+            else:
+                shutil.rmtree(log_dir)
 
-    pathlib.Path(save_dir).mkdir(exist_ok=True, parents=True)
-    if args.log:
+        pathlib.Path(save_dir).mkdir(exist_ok=True, parents=True)
         writer = SummaryWriter(log_dir=log_dir)
 
     model = NoCAP(config)
 
-    train_data_path = os.path.join(args.data_dir, 'train_split.npy')
-    train_dataset = AMASS_DS(train_data_path)
+    train_data_path = os.path.join(args.data_dir, 'train_split.npz')
+    train_dataset = NoCAP_DS(train_data_path)
+    val_data_path = os.path.join(args.data_dir, 'val_split.npz')
+    val_dataset = NoCAP_DS(val_data_path)
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size)
-    val_dataloader = train_dataloader
+    val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
@@ -130,26 +135,28 @@ def run(args, config):
                 best_val_loss = val_loss
                 best_val_epoch = epoch
 
-        if args.save_ckpts and epoch % args.save_freq == 0:
+        if log_and_save and epoch % args.save_freq == 0:
             save(save_dir, model, config, epoch)
         
-        if args.log:
+        if log_and_save:
             log(log_dir, writer, stats, epoch)
 
-    save(save_dir, model, config, epoch='final')
+    if log_and_save:
+        save(save_dir, model, config, epoch='final')
+
     print(f'Best val loss: {best_val_loss}, epoch: {best_val_epoch}')
     
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--data_dir', required=True)
     parser.add_argument('--num_epochs', default=10)
-    parser.add_argument('--data_dir', default='data/amass_processed')
-    parser.add_argument('--batch_size', default=16)
+    parser.add_argument('--batch_size', default=128)
     parser.add_argument('--lr', default=1e-3)
     parser.add_argument('--val_freq', default=5)
     parser.add_argument('--save_freq', default=5)
     parser.add_argument('--save_ckpts', type=bool, default=True)
-    parser.add_argument('--log', type=bool, default=True)
+    parser.add_argument('--disable_logging', action='store_true', default=False)
     parser.add_argument('--exp_name', default='default')
     args = parser.parse_args()
 

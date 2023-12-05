@@ -1,3 +1,4 @@
+tqdm
 matplotlib
 opencv-python
 scikit-learn

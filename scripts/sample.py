@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from nocap.model import NoCAP
-from nocap.dataset import AMASS_DS
+from nocap.dataset import NoCAP_DS
 
 
 def clip_context(past, current, max_ctx):
@@ -59,7 +59,7 @@ def run(args):
     model.load_state_dict(model_state_dict)
     model.eval()
 
-    dataset = AMASS_DS(args.data_path)
+    dataset = NoCAP_DS(args.data_path)
     num_prompt = dataset.num_joints * 10
     current = dataset[0, :num_prompt]
     num_samples = int(args.seconds * dataset.motion_freq * dataset.num_joints)

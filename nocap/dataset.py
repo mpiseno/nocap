@@ -7,7 +7,7 @@ import numpy as np
 from torch.utils.data import Dataset
 
 
-class AMASS_DS(Dataset):
+class NoCAP_DS(Dataset):
     def __init__(self, data_path):
         self.data = np.load(data_path)
         self.poses = self.data['pose_body']

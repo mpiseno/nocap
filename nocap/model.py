@@ -136,8 +136,8 @@ class Transformer(nn.Module):
         self.n_layer = config.n_layer
         self.n_embd = config.dim_embed
 
-        #self.wpe = nn.Embedding(config.n_positions, config.n_embd)
         self.pose_embedding = nn.Linear(3, config.dim_embed) # 3D joint pose to hidden representation
+        self.positional_embedding = nn.Embedding(config.n_positions, config.dim_embed)
         block = Block(config.n_ctx, config, scale=True)
         self.h = nn.ModuleList([copy.deepcopy(block) for _ in range(config.n_layer)])
         self.ln_f = LayerNorm(config.dim_embed, eps=config.layer_norm_epsilon)
@@ -154,8 +154,18 @@ class Transformer(nn.Module):
         else:
             past_length = past[0][0].size(-2)
 
+        if position_ids is None:
+            position_ids = torch.arange(
+                past_length, input_.size(-2) + past_length,
+                dtype=torch.long, device=input_.device
+                )
+            position_ids = position_ids.unsqueeze(0).expand(input_.size(0), -1)
+
+        position_ids = position_ids.view(-1, position_ids.size(-1))
+
         input_embeds = self.pose_embedding(input_)
-        hidden_states = input_embeds
+        position_embeds = self.positional_embedding(position_ids)
+        hidden_states = input_embeds + position_embeds
         presents = []
         for block, layer_past in zip(self.h, past):
             hidden_states, present = block(hidden_states, layer_past)
