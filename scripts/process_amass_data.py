@@ -12,10 +12,20 @@ INVALID_FILES = [
 ]
 
 DESIRED_FRAME_RATE = 30
-WINDOW = int(DESIRED_FRAME_RATE / 2)
+WINDOW = int(DESIRED_FRAME_RATE)
 
 TRAIN_SPLIT = 0.8
 VAL_SPLIT = 0.2
+
+N_JOINTS = 21
+
+
+def concat_joint_encodings(frames):
+    n_frames = int(frames.shape[0] / N_JOINTS)
+    joint_encodings = np.eye(N_JOINTS)
+    joint_encodings = np.tile(joint_encodings, (n_frames, 1))
+    frames = np.concatenate((frames, joint_encodings), axis=-1)
+    return frames
 
 
 def process_amass_file(input_path):
@@ -37,9 +47,10 @@ def process_amass_file(input_path):
 
     # TODO: figure out which indices correspond to which joints
     processed_data = []
-    for i in range(0, len(body_poses) - WINDOW, int(DESIRED_FRAME_RATE / 10)):
+    for i in range(0, len(body_poses) - WINDOW):
         frames = body_poses[i:i+WINDOW]
         frames = frames.reshape(-1, 3)
+        frames = concat_joint_encodings(frames)
         processed_data.append(frames)
 
     processed_data = np.array(processed_data)

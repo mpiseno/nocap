@@ -29,7 +29,7 @@ def compute_nll(model, batch):
 
     # Model outputs conditional distributions over pose t given poses [1, t-1]
     # so we need to stagger the data.
-    x = batch[:, 1:]
+    x = batch[:, 1:, :3] # slice out joint encoding
     mu, sigma = mu_[:, :-1], sigma_[:, :-1]
 
     # The objective is to minimize the negative log-likelihood of the data under
@@ -39,7 +39,7 @@ def compute_nll(model, batch):
     log_prob = (
         -1. * (x - mu).pow(2) / (2 * sigma.pow(2))
         - torch.log(math.sqrt(2 * math.pi) * sigma)
-    ).mean(-1)
+    ).sum(-1)
     log_prob = log_prob.sum(-1) # sum time dimension
     loss = -1. * log_prob.mean()
     return loss
@@ -118,10 +118,13 @@ def run(args, config):
 
     model = NoCAP(config).to(device)
 
-    train_data_path = os.path.join(args.data_dir, 'train_split.npz')
+    #train_data_path = os.path.join(args.data_dir, 'train_split.npz')
+    train_data_path = 'data/amass_processed/by_file/0005_Jogging001_stageii.npz'
     train_dataset = NoCAP_DS(train_data_path)
-    val_data_path = os.path.join(args.data_dir, 'val_split.npz')
-    val_dataset = NoCAP_DS(val_data_path)
+
+    #val_data_path = os.path.join(args.data_dir, 'val_split.npz')
+    #val_dataset = NoCAP_DS(val_data_path)
+    val_dataset = train_dataset
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
     val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True)
 
