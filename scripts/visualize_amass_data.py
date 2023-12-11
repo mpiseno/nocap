@@ -43,7 +43,7 @@ def vis_body_pose_beta(body_pose_beta, faces, mv, fId=0):
 
 
 def visualize(args, device):
-    bdata = np.load(args.motion_path)
+    bdata = np.load(args.motion_path, allow_pickle=True)
 
     print(f'Data keys available: {list(bdata.keys())}')
 
@@ -53,24 +53,51 @@ def visualize(args, device):
     bm = BodyModel(bm_fname=bm_fname, num_betas=num_betas, model_type='smplh').to(device)
     faces = c2c(bm.f)
 
-    time_length = len(bdata['pose_body'])
-    print('time_length = {}'.format(time_length))
-    # body_parms = {
-    #     'root_orient': torch.Tensor(bdata['poses'][:, :3]).to(device), # controls the global root orientation
-    #     'pose_body': torch.Tensor(bdata['poses'][:, 3:66]).to(device), # controls the body
-    #     #'trans': torch.Tensor(bdata['trans']).to(device), # controls the global body position
-    #     'betas': torch.Tensor(np.repeat(bdata['betas'][:num_betas][np.newaxis], repeats=time_length, axis=0)).to(device), # controls the body shape. Body shape is static
-    # }
-    body_parms = {
-        'root_orient': torch.Tensor(bdata['root_orient']).to(device), # controls the global root orientation
-        'pose_body': torch.Tensor(bdata['pose_body']).to(device), # controls the body
-        #'trans': torch.Tensor(bdata['trans']).to(device), # controls the global body position
-        'betas': torch.Tensor(np.repeat(bdata['betas'][:num_betas][np.newaxis], repeats=time_length, axis=0)).to(device), # controls the body shape. Body shape is static
-    }
-    if body_parms['root_orient'].shape[0] != body_parms['pose_body'].shape[0]:
+    if 'amass_raw' in args.motion_path:
+        time_length = len(bdata['pose_body'])
+        body_parms = {
+            'root_orient': torch.Tensor(bdata['poses'][:, :3]).to(device), # controls the global root orientation
+            'pose_body': torch.Tensor(bdata['poses'][:, 3:66]).to(device), # controls the body
+            #'trans': torch.Tensor(bdata['trans']).to(device), # controls the global body position
+            'betas': torch.Tensor(np.repeat(bdata['betas'][:num_betas][np.newaxis], repeats=time_length, axis=0)).to(device), # controls the body shape. Body shape is static
+        }
+    elif 'amass_processed' in args.motion_path:
+        pose_body = bdata['pose_body'][0]
+        if bdata['codebook'] is not None: # We are handling tokens
+            pose_body = pose_body.squeeze()
+            codebook = bdata['codebook'][()]
+            pose_body = [codebook[tj] for tj in pose_body]
+
+        pose_body = torch.Tensor(pose_body).view(-1, 63).to(device)
+        time_length = pose_body.shape[0]
+        root_orient = torch.tile(
+            torch.Tensor(bdata['root_orient'])[0].unsqueeze(0),
+            (time_length, 1)
+        ).to(device)
+        body_parms = {
+            'root_orient': root_orient,
+            'pose_body': pose_body,
+            'betas': torch.Tensor(
+                np.repeat(bdata['betas'][:num_betas][np.newaxis], repeats=time_length, axis=0)
+            ).to(device)
+        }
+    elif 'logs' in args.motion_path:
+        time_length = len(bdata['pose_body'])
+        body_parms = {
+            'root_orient': torch.Tensor(bdata['root_orient']).to(device),
+            'pose_body': torch.Tensor(bdata['pose_body']).to(device),
+            'betas': torch.Tensor(
+                np.repeat(bdata['betas'][:num_betas][np.newaxis], repeats=time_length, axis=0)
+            ).to(device)
+        }
         body_parms['root_orient'] = torch.Tensor(
             np.repeat(bdata['root_orient'][0][np.newaxis], repeats=time_length, axis=0)
         ).to(device)
+    else:
+        raise Exception()
+
+    for k, v in body_parms.items():
+        print(k, v.shape)
 
     imw, imh = 512, 512
     mv = MeshViewer(width=imw, height=imh, use_offscreen=True)

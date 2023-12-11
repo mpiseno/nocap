@@ -1,6 +1,7 @@
 import os
 import pathlib
 import argparse
+import collections
 
 import numpy as np
 
@@ -13,6 +14,7 @@ INVALID_FILES = [
 
 DESIRED_FRAME_RATE = 30
 WINDOW = int(DESIRED_FRAME_RATE)
+CUTOFF = 90
 
 TRAIN_SPLIT = 0.8
 VAL_SPLIT = 0.2
@@ -28,7 +30,44 @@ def concat_joint_encodings(frames):
     return frames
 
 
-def process_amass_file(input_path):
+def make_codebook(poses):
+    codebook = {}
+    for t, frame in enumerate(poses[:CUTOFF]):
+        frame = frame.reshape(-1, 3)
+        for j, p in enumerate(frame):
+            idx = j * CUTOFF + t
+            codebook[idx] = p.copy()
+
+    return codebook
+
+
+def discretize(frames, codebook):
+    dist = lambda x: ((x[0] - x[1])**2).sum()
+    out = []
+    counts = collections.defaultdict(int)
+    for frame in frames:
+        frame = frame.reshape(-1, 3)
+        new_frame = []
+        for j, pose in enumerate(frame):
+            idxs = [j * CUTOFF + t for t in range(CUTOFF)]
+            search_space = [(codebook[idx], pose, idx) for idx in idxs]
+            search_space.sort(key=dist)
+            new_pose_idx = search_space[0][-1]
+            if new_pose_idx in [810, 900]:
+                new_pose_idx = new_frame[-1] + CUTOFF
+            
+            counts[new_pose_idx] += 1
+            new_frame.append(new_pose_idx)
+        
+        new_frame = np.array(new_frame)
+        out.append(new_frame)
+
+    import pdb; pdb.set_trace()
+    out = np.vstack(out)
+    return out
+
+
+def process_amass_file(input_path, disc):
     print(f'Processing {input_path}...')
 
     data = np.load(input_path)
@@ -45,25 +84,35 @@ def process_amass_file(input_path):
     desired_idxs = np.linspace(0, num_poses - 1, num_poses_at_desired_frame_rate).astype(int)
     body_poses = body_poses[desired_idxs]
 
+    codebook = None
+    if disc:
+        codebook = make_codebook(body_poses)
+
     # TODO: figure out which indices correspond to which joints
     processed_data = []
     for i in range(0, len(body_poses) - WINDOW):
         frames = body_poses[i:i+WINDOW]
-        frames = frames.reshape(-1, 3)
-        frames = concat_joint_encodings(frames)
+        if disc:
+            frames = discretize(frames, codebook)
+            frames = frames.reshape(-1, 1)
+        else:
+            frame = frames.reshape(-1, 3)
+
+        #frames = concat_joint_encodings(frames)
         processed_data.append(frames)
 
     processed_data = np.array(processed_data)
-    return processed_data, betas, root_orient
+    return processed_data, betas, root_orient, codebook
 
 
-def save_by_file(file, data, betas, root_orient):
+def save_by_file(file, data, betas, root_orient, codebook):
     output_path = os.path.join(PROCESSED_DATA_ROOT, 'by_file', file)
     save_dict = {
         'pose_body': data,
         'motion_freq': DESIRED_FRAME_RATE,
         'betas': betas,
-        'root_orient': root_orient
+        'root_orient': root_orient,
+        'codebook': codebook
     }
     np.savez(output_path, **save_dict)
 
@@ -101,12 +150,13 @@ def process(args):
         dataset_path = os.path.join(DATA_ROOT, dataset)
         for root, dirs, files in os.walk(dataset_path):
             for file in files:
-                if valid_file(file):
+                if '0005_Jogging' in file:
+                #if valid_file(file):
                     input_path = os.path.join(root, file)
-                    processed_data, betas, root_orient = process_amass_file(input_path)
+                    processed_data, betas, root_orient, codebook = process_amass_file(input_path, disc=args.discrete)
                     all_data.append(processed_data)
                     if args.by_file:
-                        save_by_file(file, processed_data, betas, root_orient)
+                        save_by_file(file, processed_data, betas, root_orient, codebook)
 
     if not args.by_file:
         all_data = np.vstack(all_data)
@@ -127,6 +177,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--datasets', nargs='+', type=str, required=True)
     parser.add_argument('--by_file', action='store_true', default=False)
+    parser.add_argument('--discrete', action='store_true', default=False)
     args = parser.parse_args()
     verify(args)
     process(args)

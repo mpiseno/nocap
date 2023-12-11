@@ -130,14 +130,33 @@ class Block(nn.Module):
         return x, present
 
 
+class LinearReadoutHead(nn.Module):
+    def __init__(self, model_embeddings_weights, config):
+        super().__init__()
+        self.n_embd = config.dim_embed
+        self.set_embeddings_weights(model_embeddings_weights)
+
+    def set_embeddings_weights(self, model_embeddings_weights):
+        embed_shape = model_embeddings_weights.shape
+        self.decoder = nn.Linear(embed_shape[1], embed_shape[0], bias=False)
+        self.decoder.weight = model_embeddings_weights  # Tied weights
+
+    def forward(self, hidden_state):
+        # Truncated Language modeling logits (we remove the last token)
+        # h_trunc = h[:, :-1].contiguous().view(-1, self.n_embd)
+        lm_logits = self.decoder(hidden_state)
+        return lm_logits
+
+
 class Transformer(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.n_layer = config.n_layer
         self.n_embd = config.dim_embed
 
-        self.pose_embedding = nn.Linear(3 + 21, config.dim_embed) # 3D joint pose to hidden representation
-        #self.positional_embedding = nn.Embedding(config.n_positions, config.dim_embed)
+        #self.pose_embedding = nn.Linear(3, config.dim_embed) # 3D joint pose to hidden representation
+        self.token_embedding = nn.Embedding(21 * 90, config.dim_embed)
+        self.positional_embedding = nn.Embedding(config.n_positions, config.dim_embed)
         block = Block(config.n_ctx, config, scale=True)
         self.h = nn.ModuleList([copy.deepcopy(block) for _ in range(config.n_layer)])
         self.ln_f = LayerNorm(config.dim_embed, eps=config.layer_norm_epsilon)
@@ -163,9 +182,11 @@ class Transformer(nn.Module):
 
         position_ids = position_ids.view(-1, position_ids.size(-1))
 
-        input_embeds = self.pose_embedding(input_)
-        #position_embeds = self.positional_embedding(position_ids)
-        hidden_states = input_embeds #+ position_embeds
+        #input_embeds = self.pose_embedding(input_)
+        #import pdb; pdb.set_trace()
+        input_embeds = self.token_embedding(input_[..., -1])
+        position_embeds = self.positional_embedding(position_ids)
+        hidden_states = input_embeds + position_embeds
         presents = []
         for block, layer_past in zip(self.h, past):
             hidden_states, present = block(hidden_states, layer_past)
@@ -179,11 +200,19 @@ class NoCAP(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.transformer = Transformer(config)
-        self.conditional = nn.Linear(config.dim_embed, 6)
+        #self.conditional = nn.Linear(config.dim_embed, 6)
+        self.readout_head = LinearReadoutHead(self.transformer.token_embedding.weight, config)
         self.n_ctx = config.n_ctx
+
+    def set_tied(self):
+        """ Make sure we are sharing the embeddings
+        """
+        self.readout_head.set_embeddings_weights(self.transformer.wte.weight)
     
     def forward(self, input_, position_ids=None, past=None):
         hidden_states, presents = self.transformer(input_, position_ids, past)
-        gaussian_params = self.conditional(hidden_states)
-        mu, log_sigma = gaussian_params[..., :3], gaussian_params[..., 3:]
-        return mu, torch.exp(log_sigma), presents
+        logits = self.readout_head(hidden_states)
+        return logits, presents
+        #gaussian_params = self.conditional(hidden_states)
+        #mu, log_sigma = gaussian_params[..., :3], gaussian_params[..., 3:]
+        #return mu, torch.exp(log_sigma), presents

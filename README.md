@@ -15,7 +15,7 @@ This will parse all the data files and create sequences of motion data. This wil
 To train the model, run the following command. Replace the `data_dir` with the appropriate directory.
 
 ```bash
-python scripts/train.py --data_dir data/amass_processed/SFU
+python scripts/train.py --data_dir data/amass_processed/SFU --num_epochs 200 --batch_size 128 --save_freq 50
 ```
 
 ## Testing
